@@ -2,6 +2,7 @@ package squid
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -78,18 +79,18 @@ func (db *DB) Append(event Event) (*Event, error) {
 	err = db.badger.Update(func(txn *badger.Txn) error {
 		// Write primary event
 		if err := txn.Set(encodeEventKey(event.ID), data); err != nil {
-			return err
+			return fmt.Errorf("failed to write event %s: %w", event.ID, err)
 		}
 
 		// Write type index
 		if err := txn.Set(encodeTypeIndexKey(event.Type, event.ID), nil); err != nil {
-			return err
+			return fmt.Errorf("failed to write type index %s: %w", event.Type, err)
 		}
 
 		// Write tag indices
 		for k, v := range event.Tags {
 			if err := txn.Set(encodeTagIndexKey(k, v, event.ID), nil); err != nil {
-				return err
+				return fmt.Errorf("failed to write tag index key=%s: %w", k, err)
 			}
 		}
 
@@ -146,18 +147,18 @@ func (db *DB) AppendBatch(events []Event) ([]*Event, error) {
 
 			// Write primary event
 			if err := txn.Set(encodeEventKey(event.ID), data); err != nil {
-				return err
+				return fmt.Errorf("failed to write event %s: %w", event.ID, err)
 			}
 
 			// Write type index
 			if err := txn.Set(encodeTypeIndexKey(event.Type, event.ID), nil); err != nil {
-				return err
+				return fmt.Errorf("failed to write type index %s: %w", event.Type, err)
 			}
 
 			// Write tag indices
 			for k, v := range event.Tags {
 				if err := txn.Set(encodeTagIndexKey(k, v, event.ID), nil); err != nil {
-					return err
+					return fmt.Errorf("failed to write tag index key=%s: %w", k, err)
 				}
 			}
 

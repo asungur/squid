@@ -9,12 +9,13 @@ const (
 	prefixEvent = "e:" // Primary event storage
 	prefixTag   = "t:" // Tag index: t:<key>=<value>:<ulid>
 	prefixType  = "y:" // Type index: y:<type>:<ulid>
+	eventKeyLen = len(prefixEvent) + 26
 )
 
 // encodeEventKey creates a primary event key from a ULID.
 // Format: e:<ulid>
 func encodeEventKey(id ulid.ULID) []byte {
-	key := make([]byte, 0, len(prefixEvent)+26)
+	key := make([]byte, 0, eventKeyLen)
 	key = append(key, prefixEvent...)
 	key = append(key, id.String()...)
 	return key
@@ -22,7 +23,7 @@ func encodeEventKey(id ulid.ULID) []byte {
 
 // decodeEventKey extracts the ULID from a primary event key.
 func decodeEventKey(key []byte) (ulid.ULID, error) {
-	if len(key) < len(prefixEvent)+26 {
+	if len(key) < eventKeyLen {
 		return ulid.ULID{}, ErrNotFound
 	}
 	return ulid.ParseStrict(string(key[len(prefixEvent):]))
