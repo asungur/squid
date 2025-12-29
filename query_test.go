@@ -1,6 +1,7 @@
 package squid
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -31,7 +32,8 @@ func TestQueryAll(t *testing.T) {
 	}
 
 	// Query all events
-	events, err := db.Query(Query{})
+	ctx := context.Background()
+	events, err := db.Query(ctx, Query{})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -61,7 +63,8 @@ func TestQueryByType(t *testing.T) {
 	db.Append(Event{Type: "metric"})
 
 	// Query by type
-	events, err := db.Query(Query{Types: []string{"request"}})
+	ctx := context.Background()
+	events, err := db.Query(ctx, Query{Types: []string{"request"}})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -96,7 +99,8 @@ func TestQueryByTags(t *testing.T) {
 	db.Append(Event{Type: "request", Tags: map[string]string{"service": "web", "env": "prod"}})
 
 	// Query by single tag
-	events, err := db.Query(Query{Tags: map[string]string{"service": "api"}})
+	ctx := context.Background()
+	events, err := db.Query(ctx, Query{Tags: map[string]string{"service": "api"}})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -106,7 +110,7 @@ func TestQueryByTags(t *testing.T) {
 	}
 
 	// Query by multiple tags
-	events, err = db.Query(Query{Tags: map[string]string{"service": "api", "env": "prod"}})
+	events, err = db.Query(ctx, Query{Tags: map[string]string{"service": "api", "env": "prod"}})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -139,8 +143,9 @@ func TestQueryByTimeRange(t *testing.T) {
 	db.Append(Event{Timestamp: t3, Type: "event"})
 
 	// Query with start time
+	ctx := context.Background()
 	start := time.Date(2024, 1, 1, 10, 30, 0, 0, time.UTC)
-	events, err := db.Query(Query{Start: &start})
+	events, err := db.Query(ctx, Query{Start: &start})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -151,7 +156,7 @@ func TestQueryByTimeRange(t *testing.T) {
 
 	// Query with end time
 	end := time.Date(2024, 1, 1, 11, 30, 0, 0, time.UTC)
-	events, err = db.Query(Query{End: &end})
+	events, err = db.Query(ctx, Query{End: &end})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -161,7 +166,7 @@ func TestQueryByTimeRange(t *testing.T) {
 	}
 
 	// Query with both start and end
-	events, err = db.Query(Query{Start: &start, End: &end})
+	events, err = db.Query(ctx, Query{Start: &start, End: &end})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -190,7 +195,8 @@ func TestQueryLimit(t *testing.T) {
 	}
 
 	// Query with limit
-	events, err := db.Query(Query{Limit: 3})
+	ctx := context.Background()
+	events, err := db.Query(ctx, Query{Limit: 3})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -223,7 +229,8 @@ func TestQueryDescending(t *testing.T) {
 	db.Append(Event{Timestamp: t3, Type: "event", Data: map[string]any{"order": 3}})
 
 	// Query ascending (default)
-	events, err := db.Query(Query{})
+	ctx := context.Background()
+	events, err := db.Query(ctx, Query{})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
@@ -233,7 +240,7 @@ func TestQueryDescending(t *testing.T) {
 	}
 
 	// Query descending
-	events, err = db.Query(Query{Descending: true})
+	events, err = db.Query(ctx, Query{Descending: true})
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}

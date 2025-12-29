@@ -1,6 +1,7 @@
 package squid
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -31,7 +32,8 @@ type Query struct {
 }
 
 // Query finds events matching the given criteria.
-func (db *DB) Query(q Query) ([]*Event, error) {
+// The context can be used to cancel long-running queries.
+func (db *DB) Query(ctx context.Context, q Query) ([]*Event, error) {
 	db.mu.RLock()
 	if db.closed {
 		db.mu.RUnlock()
@@ -39,21 +41,26 @@ func (db *DB) Query(q Query) ([]*Event, error) {
 	}
 	db.mu.RUnlock()
 
+	// Check for cancellation before starting
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	var events []*Event
 
 	err := db.badger.View(func(txn *badger.Txn) error {
 		// Determine which scan strategy to use
-		candidateIDs, useIndex := db.planQuery(txn, q)
+		candidateIDs, useIndex := db.planQuery(ctx, txn, q)
 
 		if useIndex {
 			// Fetch events by ID from index scan results
-			events = db.fetchEventsByIDs(txn, candidateIDs, q)
+			events = db.fetchEventsByIDs(ctx, txn, candidateIDs, q)
 		} else {
 			// Full scan on primary event keys
-			events = db.fullScan(txn, q)
+			events = db.fullScan(ctx, txn, q)
 		}
 
-		return nil
+		return ctx.Err()
 	})
 
 	if err != nil {
@@ -67,18 +74,18 @@ func (db *DB) Query(q Query) ([]*Event, error) {
 // TODO(asungur): Query planning prioritises type index.
 // This could be improved by approximating selectivity of each index type,
 // and choosing the more performant index.
-func (db *DB) planQuery(txn *badger.Txn, q Query) ([]ulid.ULID, bool) {
+func (db *DB) planQuery(ctx context.Context, txn *badger.Txn, q Query) ([]ulid.ULID, bool) {
 	// If we have a single type filter, use the type index
 	// TODO(asungur): If we have multiple type filters, we should use the union of the indices.
 	if len(q.Types) == 1 {
-		ids := db.scanTypeIndex(txn, q.Types[0], q)
+		ids := db.scanTypeIndex(ctx, txn, q.Types[0], q)
 		return ids, true
 	}
 
 	// If we have tag filters, use the first tag's index
 	// (smallest result set heuristic would require counting, skip for MVP)
 	for k, v := range q.Tags {
-		ids := db.scanTagIndex(txn, k, v, q)
+		ids := db.scanTagIndex(ctx, txn, k, v, q)
 		return ids, true
 	}
 
@@ -87,19 +94,19 @@ func (db *DB) planQuery(txn *badger.Txn, q Query) ([]ulid.ULID, bool) {
 }
 
 // scanTypeIndex scans the type index for matching event IDs.
-func (db *DB) scanTypeIndex(txn *badger.Txn, eventType string, q Query) []ulid.ULID {
+func (db *DB) scanTypeIndex(ctx context.Context, txn *badger.Txn, eventType string, q Query) []ulid.ULID {
 	prefix := encodeTypeIndexPrefix(eventType)
-	return db.scanIndex(txn, prefix, q)
+	return db.scanIndex(ctx, txn, prefix, q)
 }
 
 // scanTagIndex scans the tag index for matching event IDs.
-func (db *DB) scanTagIndex(txn *badger.Txn, tagKey, tagValue string, q Query) []ulid.ULID {
+func (db *DB) scanTagIndex(ctx context.Context, txn *badger.Txn, tagKey, tagValue string, q Query) []ulid.ULID {
 	prefix := encodeTagIndexPrefix(tagKey, tagValue)
-	return db.scanIndex(txn, prefix, q)
+	return db.scanIndex(ctx, txn, prefix, q)
 }
 
 // scanIndex scans an index prefix and returns matching event IDs.
-func (db *DB) scanIndex(txn *badger.Txn, prefix []byte, q Query) []ulid.ULID {
+func (db *DB) scanIndex(ctx context.Context, txn *badger.Txn, prefix []byte, q Query) []ulid.ULID {
 	var ids []ulid.ULID
 
 	opts := badger.DefaultIteratorOptions
@@ -117,6 +124,11 @@ func (db *DB) scanIndex(txn *badger.Txn, prefix []byte, q Query) []ulid.ULID {
 	}
 
 	for it.Seek(seekKey); it.ValidForPrefix(prefix); it.Next() {
+		// Check for cancellation periodically
+		if ctx.Err() != nil {
+			break
+		}
+
 		key := it.Item().Key()
 
 		id, err := decodeIndexKey(key)
@@ -140,10 +152,15 @@ func (db *DB) scanIndex(txn *badger.Txn, prefix []byte, q Query) []ulid.ULID {
 }
 
 // fetchEventsByIDs retrieves events by their IDs and applies remaining filters.
-func (db *DB) fetchEventsByIDs(txn *badger.Txn, ids []ulid.ULID, q Query) []*Event {
+func (db *DB) fetchEventsByIDs(ctx context.Context, txn *badger.Txn, ids []ulid.ULID, q Query) []*Event {
 	var events []*Event
 
 	for _, id := range ids {
+		// Check for cancellation
+		if ctx.Err() != nil {
+			break
+		}
+
 		item, err := txn.Get(encodeEventKey(id))
 		if err != nil {
 			continue
@@ -173,7 +190,7 @@ func (db *DB) fetchEventsByIDs(txn *badger.Txn, ids []ulid.ULID, q Query) []*Eve
 }
 
 // fullScan iterates over all events and applies filters.
-func (db *DB) fullScan(txn *badger.Txn, q Query) []*Event {
+func (db *DB) fullScan(ctx context.Context, txn *badger.Txn, q Query) []*Event {
 	var events []*Event
 
 	opts := badger.DefaultIteratorOptions
@@ -189,6 +206,11 @@ func (db *DB) fullScan(txn *badger.Txn, q Query) []*Event {
 	}
 
 	for it.Seek(seekKey); it.ValidForPrefix(prefix); it.Next() {
+		// Check for cancellation periodically
+		if ctx.Err() != nil {
+			break
+		}
+
 		item := it.Item()
 		key := item.Key()
 
