@@ -56,11 +56,11 @@ func TestQueryByType(t *testing.T) {
 	}
 	defer db.Close()
 
-	// Insert events with different types
-	db.Append(Event{Type: "request"})
-	db.Append(Event{Type: "request"})
-	db.Append(Event{Type: "error"})
-	db.Append(Event{Type: "metric"})
+	// Insert events with different types. Test covers the error scenario.
+	_, _ = db.Append(Event{Type: "request"})
+	_, _ = db.Append(Event{Type: "request"})
+	_, _ = db.Append(Event{Type: "error"})
+	_, _ = db.Append(Event{Type: "metric"})
 
 	// Query by type
 	ctx := context.Background()
@@ -94,9 +94,9 @@ func TestQueryByTags(t *testing.T) {
 	defer db.Close()
 
 	// Insert events with different tags
-	db.Append(Event{Type: "request", Tags: map[string]string{"service": "api", "env": "prod"}})
-	db.Append(Event{Type: "request", Tags: map[string]string{"service": "api", "env": "dev"}})
-	db.Append(Event{Type: "request", Tags: map[string]string{"service": "web", "env": "prod"}})
+	_, _ = db.Append(Event{Type: "request", Tags: map[string]string{"service": "api", "env": "prod"}})
+	_, _ = db.Append(Event{Type: "request", Tags: map[string]string{"service": "api", "env": "dev"}})
+	_, _ = db.Append(Event{Type: "request", Tags: map[string]string{"service": "web", "env": "prod"}})
 
 	// Query by single tag
 	ctx := context.Background()
@@ -138,9 +138,9 @@ func TestQueryByTimeRange(t *testing.T) {
 	t2 := time.Date(2024, 1, 1, 11, 0, 0, 0, time.UTC)
 	t3 := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	db.Append(Event{Timestamp: t1, Type: "event"})
-	db.Append(Event{Timestamp: t2, Type: "event"})
-	db.Append(Event{Timestamp: t3, Type: "event"})
+	_, _ = db.Append(Event{Timestamp: t1, Type: "event"})
+	_, _ = db.Append(Event{Timestamp: t2, Type: "event"})
+	_, _ = db.Append(Event{Timestamp: t3, Type: "event"})
 
 	// Query with start time
 	ctx := context.Background()
@@ -191,7 +191,7 @@ func TestQueryLimit(t *testing.T) {
 
 	// Insert 10 events
 	for i := 0; i < 10; i++ {
-		db.Append(Event{Type: "event"})
+		_, _ = db.Append(Event{Type: "event"})
 	}
 
 	// Query with limit
@@ -224,9 +224,9 @@ func TestQueryDescending(t *testing.T) {
 	t2 := time.Date(2024, 1, 1, 11, 0, 0, 0, time.UTC)
 	t3 := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
-	db.Append(Event{Timestamp: t1, Type: "event", Data: map[string]any{"order": 1}})
-	db.Append(Event{Timestamp: t2, Type: "event", Data: map[string]any{"order": 2}})
-	db.Append(Event{Timestamp: t3, Type: "event", Data: map[string]any{"order": 3}})
+	_, _ = db.Append(Event{Timestamp: t1, Type: "event", Data: map[string]any{"order": 1}})
+	_, _ = db.Append(Event{Timestamp: t2, Type: "event", Data: map[string]any{"order": 2}})
+	_, _ = db.Append(Event{Timestamp: t3, Type: "event", Data: map[string]any{"order": 3}})
 
 	// Query ascending (default)
 	ctx := context.Background()
@@ -274,7 +274,7 @@ func TestCount(t *testing.T) {
 
 	// Insert events
 	for i := 0; i < 5; i++ {
-		db.Append(Event{Type: "event"})
+		_, _ = db.Append(Event{Type: "event"})
 	}
 
 	count, err = db.Count()
