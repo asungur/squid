@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/dgraph-io/badger/v4"
+	"github.com/oklog/ulid/v2"
 )
 
 // AggregationType defines the type of aggregation to perform.
@@ -47,6 +48,76 @@ type AggregateResult struct {
 	P99   float64
 }
 
+// aggregator accumulates values during aggregation.
+type aggregator struct {
+	field            string
+	needsPercentiles bool
+	count            int64
+	sum              float64
+	min              float64
+	max              float64
+	values           []float64
+}
+
+func newAggregator(field string, needsPercentiles bool) *aggregator {
+	return &aggregator{
+		field:            field,
+		needsPercentiles: needsPercentiles,
+		min:              math.MaxFloat64,
+		max:              -math.MaxFloat64,
+	}
+}
+
+// add processes an event and updates the aggregation state.
+// Returns an error if too many values are collected for percentile calculation.
+func (a *aggregator) add(event *Event) error {
+	val, ok := extractNumericValue(event, a.field)
+	if !ok && a.field != "" {
+		return nil // Skip events without the field
+	}
+
+	a.count++
+	if a.field != "" {
+		a.sum += val
+		if val < a.min {
+			a.min = val
+		}
+		if val > a.max {
+			a.max = val
+		}
+		if a.needsPercentiles {
+			if len(a.values) >= maxPercentileValues {
+				return ErrTooManyValues
+			}
+			a.values = append(a.values, val)
+		}
+	}
+	return nil
+}
+
+// result builds the final AggregateResult.
+func (a *aggregator) result() *AggregateResult {
+	result := &AggregateResult{
+		Count: a.count,
+	}
+
+	if a.count > 0 && a.field != "" {
+		result.Sum = a.sum
+		result.Avg = a.sum / float64(a.count)
+		result.Min = a.min
+		result.Max = a.max
+
+		if a.needsPercentiles && len(a.values) > 0 {
+			sort.Float64s(a.values)
+			result.P50 = percentile(a.values, 0.50)
+			result.P95 = percentile(a.values, 0.95)
+			result.P99 = percentile(a.values, 0.99)
+		}
+	}
+
+	return result
+}
+
 // Aggregate computes aggregations over events matching the query.
 // The field parameter specifies which field in Event.Data to aggregate.
 // For Count aggregation, field can be empty.
@@ -71,160 +142,110 @@ func (db *DB) Aggregate(ctx context.Context, q Query, field string, aggs []Aggre
 		}
 	}
 
-	// Aggregation state
-	var count int64
-	var sum float64
-	minVal := math.MaxFloat64
-	maxVal := -math.MaxFloat64
-	var values []float64 // Only populated if percentiles are needed
+	agg := newAggregator(field, needsPercentiles)
 
 	err := db.badger.View(func(txn *badger.Txn) error {
 		candidateIDs, useIndex := db.planQuery(ctx, txn, q)
 
 		if useIndex {
-			for _, id := range candidateIDs {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-
-				item, err := txn.Get(encodeEventKey(id))
-				if err != nil {
-					continue
-				}
-
-				var event Event
-				err = item.Value(func(val []byte) error {
-					return json.Unmarshal(val, &event)
-				})
-				if err != nil {
-					continue
-				}
-
-				if !db.matchesFilters(&event, q) {
-					continue
-				}
-
-				val, ok := extractNumericValue(&event, field)
-				if !ok && field != "" {
-					continue
-				}
-
-				count++
-				if field != "" {
-					sum += val
-					if val < minVal {
-						minVal = val
-					}
-					if val > maxVal {
-						maxVal = val
-					}
-					if needsPercentiles {
-						if len(values) >= maxPercentileValues {
-							return ErrTooManyValues
-						}
-						values = append(values, val)
-					}
-				}
-			}
-		} else {
-			opts := badger.DefaultIteratorOptions
-			opts.Reverse = q.Descending
-
-			it := txn.NewIterator(opts)
-			defer it.Close()
-
-			prefix := eventKeyPrefix()
-			seekKey := prefix
-			if q.Descending {
-				seekKey = prefixEnd(prefix)
-			}
-
-			for it.Seek(seekKey); it.ValidForPrefix(prefix); it.Next() {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-
-				item := it.Item()
-				key := item.Key()
-
-				id, err := decodeEventKey(key)
-				if err != nil {
-					continue
-				}
-
-				if !db.matchesTimeRange(id, q) {
-					if !q.Descending && q.End != nil && ulidTime(id).After(*q.End) {
-						break
-					}
-					if q.Descending && q.Start != nil && ulidTime(id).Before(*q.Start) {
-						break
-					}
-					continue
-				}
-
-				var event Event
-				err = item.Value(func(val []byte) error {
-					return json.Unmarshal(val, &event)
-				})
-				if err != nil {
-					continue
-				}
-
-				if !db.matchesFilters(&event, q) {
-					continue
-				}
-
-				val, ok := extractNumericValue(&event, field)
-				if !ok && field != "" {
-					continue
-				}
-
-				count++
-				if field != "" {
-					sum += val
-					if val < minVal {
-						minVal = val
-					}
-					if val > maxVal {
-						maxVal = val
-					}
-					if needsPercentiles {
-						if len(values) >= maxPercentileValues {
-							return ErrTooManyValues
-						}
-						values = append(values, val)
-					}
-				}
-			}
+			return db.aggregateByIDs(ctx, txn, candidateIDs, q, agg)
 		}
-
-		return ctx.Err()
+		return db.aggregateFullScan(ctx, txn, q, agg)
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	// Build result
-	result := &AggregateResult{
-		Count: count,
+	return agg.result(), nil
+}
+
+// aggregateByIDs aggregates events by fetching them from candidate IDs.
+func (db *DB) aggregateByIDs(ctx context.Context, txn *badger.Txn, ids []ulid.ULID, q Query, agg *aggregator) error {
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		item, err := txn.Get(encodeEventKey(id))
+		if err != nil {
+			continue
+		}
+
+		var event Event
+		err = item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &event)
+		})
+		if err != nil {
+			continue
+		}
+
+		if !db.matchesFilters(&event, q) {
+			continue
+		}
+
+		if err := agg.add(&event); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+// aggregateFullScan aggregates events by scanning all events.
+func (db *DB) aggregateFullScan(ctx context.Context, txn *badger.Txn, q Query, agg *aggregator) error {
+	opts := badger.DefaultIteratorOptions
+	opts.Reverse = q.Descending
+
+	it := txn.NewIterator(opts)
+	defer it.Close()
+
+	prefix := eventKeyPrefix()
+	seekKey := prefix
+	if q.Descending {
+		seekKey = prefixEnd(prefix)
 	}
 
-	if count > 0 && field != "" {
-		result.Sum = sum
-		result.Avg = sum / float64(count)
-		result.Min = minVal
-		result.Max = maxVal
+	for it.Seek(seekKey); it.ValidForPrefix(prefix); it.Next() {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 
-		if needsPercentiles && len(values) > 0 {
-			sort.Float64s(values)
-			result.P50 = percentile(values, 0.50)
-			result.P95 = percentile(values, 0.95)
-			result.P99 = percentile(values, 0.99)
+		item := it.Item()
+		key := item.Key()
+
+		id, err := decodeEventKey(key)
+		if err != nil {
+			continue
+		}
+
+		if !db.matchesTimeRange(id, q) {
+			if !q.Descending && q.End != nil && ulidTime(id).After(*q.End) {
+				break
+			}
+			if q.Descending && q.Start != nil && ulidTime(id).Before(*q.Start) {
+				break
+			}
+			continue
+		}
+
+		var event Event
+		err = item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &event)
+		})
+		if err != nil {
+			continue
+		}
+
+		if !db.matchesFilters(&event, q) {
+			continue
+		}
+
+		if err := agg.add(&event); err != nil {
+			return err
 		}
 	}
 
-	return result, nil
+	return ctx.Err()
 }
 
 // extractNumericValue extracts a numeric value from an event's Data field.
