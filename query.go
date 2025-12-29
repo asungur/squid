@@ -114,7 +114,7 @@ func (db *DB) scanIndex(txn *badger.Txn, prefix []byte, q Query) []ulid.ULID {
 	for it.Seek(seekKey); it.ValidForPrefix(prefix); it.Next() {
 		key := it.Item().Key()
 
-		id, err := decodeTagIndexKey(key) // Works for both tag and type indices
+		id, err := decodeIndexKey(key)
 		if err != nil {
 			continue
 		}

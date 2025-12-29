@@ -55,9 +55,9 @@ func encodeTagIndexPrefix(tagKey, tagValue string) []byte {
 	return prefix
 }
 
-// decodeTagIndexKey extracts the ULID from a tag index key.
-func decodeTagIndexKey(key []byte) (ulid.ULID, error) {
-	// ULID is always the last 26 characters
+// decodeIndexKey extracts the ULID from an index key (works for both tag and type indices).
+// The ULID is always the last 26 characters of the key.
+func decodeIndexKey(key []byte) (ulid.ULID, error) {
 	if len(key) < 26 {
 		return ulid.ULID{}, ErrNotFound
 	}
@@ -83,15 +83,6 @@ func encodeTypeIndexPrefix(eventType string) []byte {
 	prefix = append(prefix, eventType...)
 	prefix = append(prefix, ':')
 	return prefix
-}
-
-// decodeTypeIndexKey extracts the ULID from a type index key.
-func decodeTypeIndexKey(key []byte) (ulid.ULID, error) {
-	// ULID is always the last 26 characters
-	if len(key) < 26 {
-		return ulid.ULID{}, ErrNotFound
-	}
-	return ulid.ParseStrict(string(key[len(key)-26:]))
 }
 
 // eventKeyPrefix returns the prefix for all event keys.

@@ -212,9 +212,9 @@ func TestKeyEncoding(t *testing.T) {
 
 	// Test tag index key
 	tagKey := encodeTagIndexKey("service", "api", id)
-	decodedTag, err := decodeTagIndexKey(tagKey)
+	decodedTag, err := decodeIndexKey(tagKey)
 	if err != nil {
-		t.Fatalf("decodeTagIndexKey failed: %v", err)
+		t.Fatalf("decodeIndexKey (tag) failed: %v", err)
 	}
 	if decodedTag != id {
 		t.Errorf("tag key roundtrip failed: got %s, want %s", decodedTag, id)
@@ -222,9 +222,9 @@ func TestKeyEncoding(t *testing.T) {
 
 	// Test type index key
 	typeKey := encodeTypeIndexKey("request", id)
-	decodedType, err := decodeTypeIndexKey(typeKey)
+	decodedType, err := decodeIndexKey(typeKey)
 	if err != nil {
-		t.Fatalf("decodeTypeIndexKey failed: %v", err)
+		t.Fatalf("decodeIndexKey (type) failed: %v", err)
 	}
 	if decodedType != id {
 		t.Errorf("type key roundtrip failed: got %s, want %s", decodedType, id)
