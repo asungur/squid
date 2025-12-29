@@ -23,6 +23,7 @@ type Query struct {
 	Tags map[string]string
 
 	// Limit is the maximum number of events to return (0 means no limit).
+	// TODO(asungur): Add input validation and avoid large numbers.
 	Limit int
 
 	// Descending returns events in reverse chronological order.
