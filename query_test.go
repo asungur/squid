@@ -56,11 +56,11 @@ func TestQueryByType(t *testing.T) {
 	}
 	defer db.Close()
 
-	// Insert events with different types
-	db.Append(Event{Type: "request"})
-	db.Append(Event{Type: "request"})
-	db.Append(Event{Type: "error"})
-	db.Append(Event{Type: "metric"})
+	// Insert events with different types. Test covers the error scenario.
+	_, _ = db.Append(Event{Type: "request"})
+	_, _ = db.Append(Event{Type: "request"})
+	_, _ = db.Append(Event{Type: "error"})
+	_, _ = db.Append(Event{Type: "metric"})
 
 	// Query by type
 	ctx := context.Background()
