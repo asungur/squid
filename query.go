@@ -68,6 +68,7 @@ func (db *DB) Query(q Query) ([]*Event, error) {
 // and choosing the more performant index.
 func (db *DB) planQuery(txn *badger.Txn, q Query) ([]ulid.ULID, bool) {
 	// If we have a single type filter, use the type index
+	// TODO(asungur): If we have multiple type filters, we should use the union of the indices.
 	if len(q.Types) == 1 {
 		ids := db.scanTypeIndex(txn, q.Types[0], q)
 		return ids, true
