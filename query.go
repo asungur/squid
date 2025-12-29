@@ -63,6 +63,9 @@ func (db *DB) Query(q Query) ([]*Event, error) {
 }
 
 // planQuery decides whether to use an index and returns candidate IDs if so.
+// TODO(asungur): Query planning prioritises type index.
+// This could be improved by approximating selectivity of each index type,
+// and choosing the more performant index.
 func (db *DB) planQuery(txn *badger.Txn, q Query) ([]ulid.ULID, bool) {
 	// If we have a single type filter, use the type index
 	if len(q.Types) == 1 {
