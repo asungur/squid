@@ -186,22 +186,19 @@ func (db *DB) findExpiredEvents(txn *badger.Txn, before time.Time) ([]deleteEntr
 }
 
 // deleteEventAndIndices removes an event and all its associated indices.
+// Returns an error only if the primary event deletion fails.
+// Index deletion errors are ignored since orphaned indices are harmless
+// and will not affect correctness (they just won't match any events).
 func (db *DB) deleteEventAndIndices(txn *badger.Txn, entry deleteEntry) error {
-	// Delete primary event
+	// Delete primary event - this is the critical operation
 	if err := txn.Delete(encodeEventKey(entry.id)); err != nil {
 		return err
 	}
 
-	// Delete type index
-	if err := txn.Delete(encodeTypeIndexKey(entry.event.Type, entry.id)); err != nil {
-		return err
-	}
-
-	// Delete tag indices
+	// Best-effort index cleanup - ignore errors
+	_ = txn.Delete(encodeTypeIndexKey(entry.event.Type, entry.id))
 	for k, v := range entry.event.Tags {
-		if err := txn.Delete(encodeTagIndexKey(k, v, entry.id)); err != nil {
-			return err
-		}
+		_ = txn.Delete(encodeTagIndexKey(k, v, entry.id))
 	}
 
 	return nil
