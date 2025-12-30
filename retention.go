@@ -29,6 +29,13 @@ type retentionState struct {
 	running bool
 }
 
+// isRunning safely checks if the retention goroutine is running.
+func (s *retentionState) isRunning() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running
+}
+
 // SetRetention configures the retention policy and starts background cleanup.
 // Calling this multiple times will update the policy and restart the cleanup goroutine.
 // Pass a zero MaxAge to disable retention (stop cleanup).
@@ -37,7 +44,7 @@ func (db *DB) SetRetention(policy RetentionPolicy) {
 	defer db.mu.Unlock()
 
 	// Stop existing retention goroutine if running
-	if db.retention != nil && db.retention.running {
+	if db.retention != nil && db.retention.isRunning() {
 		db.retention.cancel()
 		<-db.retention.done
 	}

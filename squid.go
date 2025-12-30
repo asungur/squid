@@ -45,7 +45,7 @@ func (db *DB) Close() error {
 	}
 
 	// Stop retention goroutine if running
-	if db.retention != nil && db.retention.running {
+	if db.retention != nil && db.retention.isRunning() {
 		db.retention.cancel()
 		<-db.retention.done
 	}
