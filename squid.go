@@ -12,10 +12,11 @@ import (
 
 // DB is the main database handle for Squid.
 type DB struct {
-	badger *badger.DB
-	ulids  *ulidSource
-	closed bool
-	mu     sync.RWMutex
+	badger    *badger.DB
+	ulids     *ulidSource
+	retention *retentionState
+	closed    bool
+	mu        sync.RWMutex
 }
 
 // Open creates or opens a Squid database at the given path.
@@ -42,6 +43,13 @@ func (db *DB) Close() error {
 	if db.closed {
 		return ErrClosed
 	}
+
+	// Stop retention goroutine if running
+	if db.retention != nil && db.retention.running {
+		db.retention.cancel()
+		<-db.retention.done
+	}
+
 	db.closed = true
 
 	return db.badger.Close()
