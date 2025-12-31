@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sort"
 	"time"
@@ -185,8 +186,10 @@ func formatDataValue(v any) string {
 			return "true"
 		}
 		return "false"
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return fmt.Sprintf("%v", val)
 	default:
-		// Use JSON encoding for numbers, arrays, objects, etc.
+		// Use JSON encoding for arrays, objects, etc.
 		b, err := json.Marshal(val)
 		if err != nil {
 			return ""
