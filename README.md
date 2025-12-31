@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" width="300" height="150" alt="Squid mascot"/>
+  <img src="logo.png" width="300" height="300" alt="Squid mascot"/>
 </p>
 
 # Squid
