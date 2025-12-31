@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"sort"
+	"time"
 )
 
 // ExportFormat defines the output format for exported events.
@@ -39,16 +40,20 @@ func (db *DB) Export(ctx context.Context, w io.Writer, q Query, format ExportFor
 
 	switch format {
 	case JSON:
-		return exportJSON(w, events)
+		return exportJSON(ctx, w, events)
 	case CSV:
-		return exportCSV(w, events)
+		return exportCSV(ctx, w, events)
 	default:
-		return exportJSON(w, events)
+		return exportJSON(ctx, w, events)
 	}
 }
 
 // exportJSON writes events as a JSON array.
-func exportJSON(w io.Writer, events []*Event) error {
+// For JSON, we write all events at once, so we just check context before starting.
+func exportJSON(ctx context.Context, w io.Writer, events []*Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(events)
@@ -56,9 +61,14 @@ func exportJSON(w io.Writer, events []*Event) error {
 
 // exportCSV writes events as CSV with flattened tags and data fields.
 // Column order: id, timestamp, type, tag_*, data_*
-func exportCSV(w io.Writer, events []*Event) error {
+// Checks context cancellation periodically during row writing.
+func exportCSV(ctx context.Context, w io.Writer, events []*Event) error {
 	if len(events) == 0 {
 		return nil
+	}
+
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	// Collect all unique tag and data keys
@@ -75,8 +85,14 @@ func exportCSV(w io.Writer, events []*Event) error {
 		return err
 	}
 
-	// Write rows
-	for _, event := range events {
+	// Write rows with periodic context checks
+	for i, event := range events {
+		// Check context every 1000 rows to avoid overhead on small exports
+		if i%1000 == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
 		row := buildCSVRow(event, tagKeys, dataKeys)
 		if err := writer.Write(row); err != nil {
 			return err
@@ -138,7 +154,7 @@ func buildCSVHeader(tagKeys, dataKeys []string) []string {
 func buildCSVRow(event *Event, tagKeys, dataKeys []string) []string {
 	row := []string{
 		event.ID.String(),
-		event.Timestamp.Format("2006-01-02T15:04:05.000Z07:00"),
+		event.Timestamp.Format(time.RFC3339Nano),
 		event.Type,
 	}
 

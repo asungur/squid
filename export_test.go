@@ -345,3 +345,37 @@ func TestFormatDataValue(t *testing.T) {
 		})
 	}
 }
+
+func TestExportContextCancellation(t *testing.T) {
+	dir, err := os.MkdirTemp("", "squid-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	// Insert a test event
+	_, _ = db.Append(Event{Type: "request"})
+
+	// Test with already cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	var buf bytes.Buffer
+	err = db.Export(ctx, &buf, Query{}, JSON)
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled, got %v", err)
+	}
+
+	// Test CSV with cancelled context
+	buf.Reset()
+	err = db.Export(ctx, &buf, Query{}, CSV)
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled for CSV, got %v", err)
+	}
+}
