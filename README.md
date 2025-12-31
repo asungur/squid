@@ -1,9 +1,8 @@
-# Squid
-
 <p align="center">
   <img src="logo.png" width="300" height="300" alt="Squid mascot"/>
 </p>
 
+# Squid
 Squid is an event-log database for Go, built on BadgerDB. It provides append-only event storage with querying, aggregations, retention, and export capabilities.
 
 ## Getting Started
