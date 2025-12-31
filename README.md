@@ -112,7 +112,9 @@ sq.SetRetention(squid.RetentionPolicy{
 })
 
 // Disable retention
-sq.SetRetention(squid.RetentionPolicy{})
+sq.SetRetention(squid.RetentionPolicy{
+    MaxAge: 0,
+})
 
 // Manual cleanup
 deleted, err := sq.DeleteBefore(time.Now().Add(-24 * time.Hour))
